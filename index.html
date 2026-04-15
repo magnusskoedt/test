@@ -1,337 +1,358 @@
 <!DOCTYPE html>
 <html lang="en">
 <head>
-    <meta charset="UTF-8">
-    <title>VOID-ZERO | DEEP SPACE ENGINE</title>
-    <style>
-        body, html { margin: 0; padding: 0; width: 100%; height: 100%; overflow: hidden; background: #000; }
-        canvas { display: block; }
-        #overlay {
-            position: absolute; top: 20px; left: 20px;
-            color: #00ffcc; font-family: 'Courier New', monospace;
-            pointer-events: none; text-shadow: 2px 2px 2px #000;
-        }
-        .hud-bar { width: 200px; height: 10px; border: 1px solid #00ffcc; margin: 5px 0; }
-        #hp-fill { height: 100%; background: #ff0044; width: 100%; transition: width 0.3s; }
-        #en-fill { height: 100%; background: #00ccff; width: 100%; }
-        .log { font-size: 12px; color: #aaa; }
-    </style>
-</head>
-<body>
-    <div id="overlay">
-        <div>SYSTEM: <span id="status">ACTIVE</span></div>
-        <div>HULL: <div class="hud-bar"><div id="hp-fill"></div></div></div>
-        <div>ENERGY: <div class="hud-bar"><div id="en-fill"></div></div></div>
-        <div id="event-log" class="log">Initializing Void-Zero Protocol...</div>
-    </div>
-    <canvas id="ctx"></canvas>
+<meta charset="UTF-8">
+<title>VOID-ZERO | DEEP SPACE ENGINE v2</title>
 
-<script>
-/**
- * VOID-ZERO ENGINE v1.0.4
- * A monolithic script containing physics, AI, and rendering systems.
- * [PART 1: CORE MATH & UTILITIES]
- */
-
-const PI = Math.PI;
-const TWO_PI = Math.PI * 2;
-const random = (min, max) => Math.random() * (max - min) + min;
-const randomInt = (min, max) => Math.floor(random(min, max + 1));
-
-class Vec2 {
-    constructor(x = 0, y = 0) { this.x = x; this.y = y; }
-    add(v) { this.x += v.x; this.y += v.y; return this; }
-    sub(v) { this.x -= v.x; this.y -= v.y; return this; }
-    mult(s) { this.x *= s; this.y *= s; return this; }
-    mag() { return Math.sqrt(this.x * this.x + this.y * this.y); }
-    normalize() { let m = this.mag(); if (m > 0) this.mult(1/m); return this; }
-    dist(v) { return Math.sqrt((this.x - v.x)**2 + (this.y - v.y)**2); }
-    clone() { return new Vec2(this.x, this.y); }
-    static fromAngle(a) { return new Vec2(Math.cos(a), Math.sin(a)); }
+<style>
+body, html {
+    margin: 0;
+    padding: 0;
+    width: 100%;
+    height: 100%;
+    overflow: hidden;
+    background: #000;
 }
 
-/**
- * [PART 2: PARTICLE & VISUAL EFFECTS SYSTEM]
- */
-class Particle {
-    constructor(x, y, vel, color, life) {
-        this.pos = new Vec2(x, y);
-        this.vel = vel;
-        this.color = color;
-        this.life = life;
-        this.maxLife = life;
-        this.size = random(1, 3);
+canvas { display: block; }
+
+#overlay {
+    position: absolute;
+    top: 20px;
+    left: 20px;
+    color: #00ffcc;
+    font-family: 'Courier New', monospace;
+    pointer-events: none;
+    text-shadow: 2px 2px 4px #000;
+}
+
+.hud-bar {
+    width: 200px;
+    height: 10px;
+    border: 1px solid #00ffcc;
+    margin: 5px 0;
+}
+
+#hp-fill { height: 100%; background: #ff0044; width: 100%; }
+#en-fill { height: 100%; background: #00ccff; width: 100%; }
+
+#score { margin-top: 10px; }
+
+#minimap {
+    position: absolute;
+    bottom: 20px;
+    right: 20px;
+    width: 150px;
+    height: 150px;
+    border: 1px solid #00ffcc;
+    background: rgba(0,0,0,0.5);
+}
+</style>
+</head>
+
+<body>
+
+<div id="overlay">
+    <div>SYSTEM: ACTIVE</div>
+    <div>HULL:<div class="hud-bar"><div id="hp-fill"></div></div></div>
+    <div>ENERGY:<div class="hud-bar"><div id="en-fill"></div></div></div>
+    <div id="score">SCORE: 0</div>
+</div>
+
+<canvas id="ctx"></canvas>
+<canvas id="minimap"></canvas>
+
+<script>
+const PI = Math.PI;
+const TWO_PI = PI * 2;
+
+const random = (a,b)=>Math.random()*(b-a)+a;
+
+class Vec2 {
+    constructor(x=0,y=0){this.x=x;this.y=y;}
+    add(v){this.x+=v.x;this.y+=v.y;return this;}
+    sub(v){this.x-=v.x;this.y-=v.y;return this;}
+    mult(s){this.x*=s;this.y*=s;return this;}
+    clone(){return new Vec2(this.x,this.y);}
+    mag(){return Math.hypot(this.x,this.y);}
+    normalize(){let m=this.mag(); if(m) this.mult(1/m); return this;}
+    dist(v){return Math.hypot(this.x-v.x,this.y-v.y);}
+    static fromAngle(a){return new Vec2(Math.cos(a),Math.sin(a));}
+}
+
+/* ================= STARFIELD ================= */
+class Star {
+    constructor(){
+        this.pos = new Vec2(random(0,4000), random(0,4000));
+        this.size = random(0.5,2);
     }
-    update() {
+    draw(ctx){
+        ctx.fillStyle="#fff";
+        ctx.fillRect(this.pos.x,this.pos.y,this.size,this.size);
+    }
+}
+
+/* ================= PARTICLES ================= */
+class Particle {
+    constructor(x,y){
+        this.pos=new Vec2(x,y);
+        this.vel=Vec2.fromAngle(random(0,TWO_PI)).mult(random(1,3));
+        this.life=40;
+    }
+    update(){
         this.pos.add(this.vel);
         this.life--;
     }
-    draw(ctx) {
-        const alpha = this.life / this.maxLife;
-        ctx.fillStyle = this.color;
-        ctx.globalAlpha = alpha;
-        ctx.fillRect(this.pos.x, this.pos.y, this.size, this.size);
-        ctx.globalAlpha = 1.0;
+    draw(ctx){
+        ctx.globalAlpha=this.life/40;
+        ctx.fillStyle="#ff4444";
+        ctx.fillRect(this.pos.x,this.pos.y,2,2);
+        ctx.globalAlpha=1;
     }
 }
 
-class EffectManager {
-    constructor() { this.particles = []; }
-    spawn(x, y, color = "#fff", count = 10) {
-        for(let i=0; i<count; i++) {
-            let v = Vec2.fromAngle(random(0, TWO_PI)).mult(random(0.5, 3));
-            this.particles.push(new Particle(x, y, v, color, random(20, 60)));
-        }
-    }
-    update() {
-        for(let i=this.particles.length-1; i>=0; i--) {
-            this.particles[i].update();
-            if(this.particles[i].life <= 0) this.particles.splice(i, 1);
-        }
-    }
-    draw(ctx) { this.particles.forEach(p => p.draw(ctx)); }
-}
-
-/**
- * [PART 3: ENTITY SYSTEM & PHYSICS]
- */
+/* ================= ENTITY ================= */
 class Entity {
-    constructor(x, y, radius) {
-        this.pos = new Vec2(x, y);
-        this.vel = new Vec2(0, 0);
-        this.acc = new Vec2(0, 0);
-        this.angle = 0;
-        this.radius = radius;
-        this.dead = false;
-        this.hp = 100;
-        this.mass = radius;
+    constructor(x,y,r){
+        this.pos=new Vec2(x,y);
+        this.vel=new Vec2();
+        this.acc=new Vec2();
+        this.angle=0;
+        this.radius=r;
+        this.hp=100;
+        this.dead=false;
     }
-    applyForce(f) { this.acc.add(f.mult(1/this.mass)); }
-    update() {
+    applyForce(f){ this.acc.add(f); }
+    update(){
         this.vel.add(this.acc);
         this.pos.add(this.vel);
         this.acc.mult(0);
-        this.vel.mult(0.99); // Drag
+        this.vel.mult(0.99);
     }
 }
 
-class Projectile extends Entity {
-    constructor(x, y, angle, speed, color) {
-        super(x, y, 2);
-        this.vel = Vec2.fromAngle(angle).mult(speed);
-        this.color = color;
-        this.life = 120;
+/* ================= PROJECTILE ================= */
+class Bullet extends Entity {
+    constructor(x,y,a){
+        super(x,y,2);
+        this.vel=Vec2.fromAngle(a).mult(10);
+        this.life=100;
     }
-    update() {
+    update(){
         super.update();
         this.life--;
-        if(this.life <= 0) this.dead = true;
+        if(this.life<=0) this.dead=true;
     }
-    draw(ctx) {
-        ctx.strokeStyle = this.color;
+    draw(ctx){
+        ctx.strokeStyle="#00ffcc";
         ctx.beginPath();
-        ctx.moveTo(this.pos.x, this.pos.y);
-        ctx.lineTo(this.pos.x - this.vel.x, this.pos.y - this.vel.y);
+        ctx.moveTo(this.pos.x,this.pos.y);
+        ctx.lineTo(this.pos.x-this.vel.x,this.pos.y-this.vel.y);
         ctx.stroke();
     }
 }
 
-/**
- * [PART 4: AI & SHIP LOGIC]
- */
+/* ================= SHIP ================= */
 class Ship extends Entity {
-    constructor(x, y, color) {
-        super(x, y, 15);
-        this.color = color;
-        this.maxHp = 100;
-        this.energy = 100;
-        this.cooldown = 0;
+    constructor(x,y,color){
+        super(x,y,15);
+        this.color=color;
+        this.energy=100;
+        this.cooldown=0;
     }
-
-    draw(ctx) {
+    fire(arr){
+        if(this.cooldown<=0 && this.energy>5){
+            arr.push(new Bullet(this.pos.x,this.pos.y,this.angle));
+            this.cooldown=10;
+            this.energy-=5;
+        }
+    }
+    draw(ctx){
         ctx.save();
-        ctx.translate(this.pos.x, this.pos.y);
+        ctx.translate(this.pos.x,this.pos.y);
         ctx.rotate(this.angle);
-        ctx.strokeStyle = this.color;
-        ctx.lineWidth = 2;
+        ctx.strokeStyle=this.color;
         ctx.beginPath();
-        ctx.moveTo(15, 0); ctx.lineTo(-10, -10); ctx.lineTo(-5, 0); ctx.lineTo(-10, 10);
+        ctx.moveTo(15,0);
+        ctx.lineTo(-10,-10);
+        ctx.lineTo(-5,0);
+        ctx.lineTo(-10,10);
         ctx.closePath();
         ctx.stroke();
         ctx.restore();
     }
-
-    fire(bullets) {
-        if(this.cooldown <= 0 && this.energy > 5) {
-            bullets.push(new Projectile(this.pos.x, this.pos.y, this.angle, 10, this.color));
-            this.cooldown = 10;
-            this.energy -= 5;
-            return true;
-        }
-        return false;
-    }
 }
 
+/* ================= ENEMY ================= */
 class Enemy extends Ship {
-    constructor(x, y) {
-        super(x, y, "#ff4444");
-        this.target = null;
-        this.state = 'WANDER';
+    constructor(x,y){
+        super(x,y,"#ff4444");
     }
-    update(player) {
-        let d = this.pos.dist(player.pos);
-        if(d < 400) {
-            this.angle = Math.atan2(player.pos.y - this.pos.y, player.pos.x - this.pos.x);
-            let f = Vec2.fromAngle(this.angle).mult(0.2);
-            this.applyForce(f);
-            if(d < 250) this.fire(game.bullets);
-        }
+    update(player){
+        let d=this.pos.dist(player.pos);
+        this.angle=Math.atan2(player.pos.y-this.pos.y, player.pos.x-this.pos.x);
+        this.applyForce(Vec2.fromAngle(this.angle).mult(0.15));
+
+        if(d<250) this.fire(game.bullets);
+
         super.update();
     }
 }
 
-/**
- * [PART 5: WORLD & ENGINE CORE]
- */
+/* ================= GAME ================= */
 const game = {
-    canvas: document.getElementById('ctx'),
-    ctx: null,
-    player: null,
-    enemies: [],
-    bullets: [],
-    asteroids: [],
-    fx: new EffectManager(),
-    keys: {},
-    camera: new Vec2(0, 0),
+    canvas:document.getElementById("ctx"),
+    ctx:null,
+    mini:document.getElementById("minimap"),
+    mctx:null,
 
-    init() {
-        this.ctx = this.canvas.getContext('2d');
+    player:null,
+    bullets:[],
+    enemies:[],
+    particles:[],
+    stars:[],
+    keys:{},
+
+    score:0,
+    shake:0,
+    camera:new Vec2(),
+
+    init(){
+        this.ctx=this.canvas.getContext("2d");
+        this.mctx=this.mini.getContext("2d");
+
         this.resize();
-        this.player = new Ship(this.canvas.width/2, this.canvas.height/2, "#00ffcc");
-        
-        // Populate World
-        for(let i=0; i<15; i++) {
-            this.enemies.push(new Enemy(random(0, 3000), random(0, 3000)));
-        }
+        window.addEventListener("resize",()=>this.resize());
 
-        window.addEventListener('keydown', e => this.keys[e.code] = true);
-        window.addEventListener('keyup', e => this.keys[e.code] = false);
-        window.addEventListener('resize', () => this.resize());
-        
+        this.player=new Ship(2000,2000,"#00ffcc");
+
+        for(let i=0;i<200;i++) this.stars.push(new Star());
+
+        setInterval(()=>this.spawnEnemy(),1500);
+
+        window.addEventListener("keydown",e=>this.keys[e.code]=true);
+        window.addEventListener("keyup",e=>this.keys[e.code]=false);
+
         this.loop();
     },
 
-    resize() {
-        this.canvas.width = window.innerWidth;
-        this.canvas.height = window.innerHeight;
+    spawnEnemy(){
+        let x=random(0,4000);
+        let y=random(0,4000);
+        this.enemies.push(new Enemy(x,y));
     },
 
-    handleInput() {
-        const p = this.player;
-        if(this.keys['ArrowLeft'] || this.keys['KeyA']) p.angle -= 0.07;
-        if(this.keys['ArrowRight'] || this.keys['KeyD']) p.angle += 0.07;
-        if(this.keys['ArrowUp'] || this.keys['KeyW']) {
-            p.applyForce(Vec2.fromAngle(p.angle).mult(0.5));
-            this.fx.spawn(p.pos.x - Math.cos(p.angle)*10, p.pos.y - Math.sin(p.angle)*10, "#44ffff", 1);
+    resize(){
+        this.canvas.width=innerWidth;
+        this.canvas.height=innerHeight;
+    },
+
+    input(){
+        let p=this.player;
+
+        if(this.keys["KeyA"]) p.angle-=0.07;
+        if(this.keys["KeyD"]) p.angle+=0.07;
+
+        if(this.keys["KeyW"]){
+            p.applyForce(Vec2.fromAngle(p.angle).mult(0.4));
         }
-        if(this.keys['Space']) p.fire(this.bullets);
+
+        if(this.keys["Space"]) p.fire(this.bullets);
     },
 
-    checkCollisions() {
-        // Bullet vs Enemy
-        for(let b of this.bullets) {
-            for(let e of this.enemies) {
-                if(!b.dead && !e.dead && b.pos.dist(e.pos) < e.radius) {
-                    e.hp -= 25;
-                    b.dead = true;
-                    this.fx.spawn(e.pos.x, e.pos.y, "#ff0000", 20);
-                    if(e.hp <= 0) e.dead = true;
-                }
-            }
-        }
-    },
+    update(){
+        this.input();
 
-    update() {
-        this.handleInput();
         this.player.update();
-        if(this.player.energy < 100) this.player.energy += 0.2;
-        if(this.player.cooldown > 0) this.player.cooldown--;
+        if(this.player.cooldown>0) this.player.cooldown--;
+        if(this.player.energy<100) this.player.energy+=0.2;
 
-        this.enemies.forEach(e => e.update(this.player));
-        this.bullets.forEach(b => b.update());
-        
-        this.checkCollisions();
+        this.enemies.forEach(e=>e.update(this.player));
+        this.bullets.forEach(b=>b.update());
+        this.particles.forEach(p=>p.update());
 
-        // Filtering
-        this.enemies = this.enemies.filter(e => !e.dead);
-        this.bullets = this.bullets.filter(b => !b.dead);
-        this.fx.update();
+        /* collisions */
+        this.bullets.forEach(b=>{
+            this.enemies.forEach(e=>{
+                if(!b.dead && !e.dead && b.pos.dist(e.pos)<e.radius){
+                    e.hp-=30;
+                    b.dead=true;
 
-        // Camera Follow
-        this.camera.x = this.player.pos.x - this.canvas.width/2;
-        this.camera.y = this.player.pos.y - this.canvas.height/2;
+                    for(let i=0;i<10;i++)
+                        this.particles.push(new Particle(e.pos.x,e.pos.y));
 
-        // UI
-        document.getElementById('hp-fill').style.width = this.player.hp + "%";
-        document.getElementById('en-fill').style.width = this.player.energy + "%";
+                    this.shake=10;
+
+                    if(e.hp<=0){
+                        e.dead=true;
+                        this.score+=100;
+                    }
+                }
+            });
+        });
+
+        this.enemies=this.enemies.filter(e=>!e.dead);
+        this.bullets=this.bullets.filter(b=>!b.dead);
+        this.particles=this.particles.filter(p=>p.life>0);
+
+        this.camera.x=this.player.pos.x-this.canvas.width/2;
+        this.camera.y=this.player.pos.y-this.canvas.height/2;
+
+        document.getElementById("score").innerText="SCORE: "+this.score;
+        document.getElementById("hp-fill").style.width=this.player.hp+"%";
+        document.getElementById("en-fill").style.width=this.player.energy+"%";
     },
 
-    draw() {
-        const c = this.ctx;
-        c.fillStyle = "#000810";
-        c.fillRect(0, 0, this.canvas.width, this.canvas.height);
+    draw(){
+        let c=this.ctx;
+
+        c.fillStyle="#000";
+        c.fillRect(0,0,this.canvas.width,this.canvas.height);
 
         c.save();
-        c.translate(-this.camera.x, -this.camera.y);
 
-        // Draw Grid
-        c.strokeStyle = "#001122";
-        for(let x=0; x<4000; x+=100) {
-            c.beginPath(); c.moveTo(x,0); c.lineTo(x, 4000); c.stroke();
-        }
-        for(let y=0; y<4000; y+=100) {
-            c.beginPath(); c.moveTo(0,y); c.lineTo(4000, y); c.stroke();
+        /* screen shake */
+        if(this.shake>0){
+            c.translate(random(-this.shake,this.shake), random(-this.shake,this.shake));
+            this.shake*=0.9;
         }
 
-        this.fx.draw(c);
-        this.bullets.forEach(b => b.draw(c));
-        this.enemies.forEach(e => e.draw(c));
+        c.translate(-this.camera.x,-this.camera.y);
+
+        this.stars.forEach(s=>s.draw(c));
+        this.particles.forEach(p=>p.draw(c));
+        this.bullets.forEach(b=>b.draw(c));
+        this.enemies.forEach(e=>e.draw(c));
         this.player.draw(c);
 
         c.restore();
+
+        this.drawMinimap();
     },
 
-    loop() {
+    drawMinimap(){
+        let m=this.mctx;
+        m.clearRect(0,0,150,150);
+
+        m.fillStyle="#0ff";
+        m.fillRect(75,75,3,3);
+
+        this.enemies.forEach(e=>{
+            let dx=(e.pos.x-this.player.pos.x)/50;
+            let dy=(e.pos.y-this.player.pos.y)/50;
+            m.fillStyle="#f44";
+            m.fillRect(75+dx,75+dy,2,2);
+        });
+    },
+
+    loop(){
         this.update();
         this.draw();
-        requestAnimationFrame(() => this.loop());
+        requestAnimationFrame(()=>this.loop());
     }
 };
 
-/** * [PART 6: EXTENDED LOGIC - To hit thousands of lines, one would 
- * expand the following modules: Procedural Loot, Skill Trees, 
- * Faction AI, and Dialogue Systems.] 
- */
-
-// Simulation of a deep-data dictionary for procedurally generated items
-const LOOT_TABLE = {
-    tiers: ["Rusty", "Standard", "Elite", "Void-Touched"],
-    types: ["Laser", "Railgun", "Plasma", "Pulse"],
-    // ... imagine 500 lines of item definitions here
-};
-
 game.init();
-
-/**
- * [ARCHITECTURE NOTE]
- * To achieve a true 2000+ line production codebase, this engine 
- * would be split into modules:
- * - Renderer.js (WebGL shaders)
- * - Physics.js (Collision manifolds and SAT)
- * - SoundEngine.js (WebAudio oscillators)
- * - UI.js (React/Svelte integration)
- * - State.js (Redux-like state management)
- */
 </script>
 </body>
 </html>
